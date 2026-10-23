@@ -1,5 +1,5 @@
 import type { Severity } from '../types';
-import { excerptAround, hiddenAt, normalizeView, offsetAt, rank, type Ctx, type TextView } from '../util';
+import { excerptAround, hiddenAt, maxSeverity, normalizeView, offsetAt, rank, WEAK_HIDDEN, type Ctx, type TextView } from '../util';
 
 export interface InstructionRule {
   id: string;
@@ -74,6 +74,7 @@ export const INSTRUCTION_RULES: InstructionRule[] = [
     re: new RegExp(
       [
         `\\bas\\s+an?\\s+(?:ai|llm|language\\s+model|large\\s+language\\s+model)(?:\\s+(?:assistant|agent|model|system|chatbot))?\\s*,?\\s+you\\s+(?:must|should|shall|need\\s+to|are\\s+(?:required|instructed|expected)\\s+to|have\\s+to|will|cannot|can't|may\\s+not)\\b`,
+        `\\b(?:when|if|whenever|once)\\s+(?:an?\\s+|the\\s+|any\\s+)?${AI_NOUN}\\s+(?:[\\w'-]+\\s+){0,6}?(?:it|they|you)\\s+(?:must|should|shall|needs?\\s+to|has\\s+to|have\\s+to|will\\s+need\\s+to)\\b`,
         `\\b(?:if|when)\\s+you\\s+are\\s+an?\\s+(?:ai|llm|large\\s+language\\s+model|language\\s+model|ai\\s+(?:assistant|agent|model)|assistant|chatbot|bot|agent|automated\\s+(?:system|agent|tool)|crawler|scraper|summari[sz]er)\\b`,
         `\\b(?:attention|note|message|instructions?|important(?:\\s+note)?|reminder|notice)\\s+(?:to|for)\\s+(?:the\\s+|any\\s+|all\\s+)?${AI_NOUN}\\b`,
         `\\b(?:dear|hey|attention|attn)\\s*,?\\s+(?:ai|a\\.i\\.|llm|assistant|chatbot|ai\\s+agent|ai\\s+assistant|language\\s+model|chatgpt|gpt)\\b`,
@@ -108,6 +109,12 @@ export const INSTRUCTION_RULES: InstructionRule[] = [
     severity: 'high',
     message: "Asks the model to include the user's private data in its output",
     re: /\binclude\s+(?:the\s+)?(?:user'?s?|users'|their|customer'?s?|your\s+user'?s?)\s+(?:[\w-]+\s+){0,2}?(?:email|e-mail|name|address|phone|password|credentials?|data|details|information|history|messages?|conversation|location|account|card|ssn|token|session|cookies?)\b/gi,
+  },
+  {
+    id: 'instruction/exfiltration',
+    severity: 'high',
+    message: 'Asks the model to render an image or link that carries conversation data',
+    re: /\b(?:render|display|show|output|print|include|add|append|embed|insert)\b[^.!?\n]{0,60}?\b(?:image|badge|img|pixel|link|url)\b[^.!?\n]{0,60}?\b(?:with|containing|including|carrying|that\s+includes)\b[^.!?\n]{0,30}?\b(?:conversation|chat|history|transcript|context|user'?s?|their|previous\s+messages|messages|secrets?)\b/gi,
   },
   {
     id: 'instruction/tool-invocation',
@@ -168,7 +175,13 @@ export function detectInstructions(ctx: Ctx, view: TextView): number {
           break;
         }
       }
-      const severity: Severity = hidden ? (r >= rank('medium') ? 'critical' : 'medium') : rule.severity;
+      const severity: Severity = !hidden
+        ? rule.severity
+        : WEAK_HIDDEN.has(hidden)
+          ? maxSeverity(rule.severity, 'high')
+          : r >= rank('medium')
+            ? 'critical'
+            : 'medium';
       const start = offsetAt(norm, s);
       const end = Math.max(start + 1, offsetAt(norm, e - 1) + 1);
       ctx.add({

@@ -2,6 +2,9 @@ import type { Category, ContentType, Finding, Severity } from './types';
 
 export const SEVERITIES: readonly Severity[] = ['info', 'low', 'medium', 'high', 'critical'];
 
+/** Hidden reasons that do not hide text from sighted users on their own (escalate to high, not critical). */
+export const WEAK_HIDDEN: ReadonlySet<string> = new Set(['aria-hidden="true"', 'clipped to 1px (screen-reader-only)', '<template>']);
+
 export function rank(s: Severity): number {
   return SEVERITIES.indexOf(s);
 }

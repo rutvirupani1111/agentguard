@@ -1,3 +1,5 @@
+import { detectExfiltration } from './detectors/exfil';
+import { analyzeStructured } from './detectors/hidden';
 import { detectInstructions } from './detectors/instructions';
 import { detectUnicode } from './detectors/unicode';
 import type { ContentType, InputType, ScanOptions, ScanResult, Severity } from './types';
@@ -29,21 +31,6 @@ function now(): number {
   return typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now();
 }
 
-/** Hook used by the HTML/Markdown analyser (registered in index.ts to keep this module small). */
-export type StructuredAnalyzer = (ctx: ReturnType<typeof createCtx>) => TextView;
-export type UrlAnalyzer = (ctx: ReturnType<typeof createCtx>) => void;
-
-let structured: StructuredAnalyzer | null = null;
-let urlAnalyzer: UrlAnalyzer | null = null;
-
-export function registerStructuredAnalyzer(fn: StructuredAnalyzer): void {
-  structured = fn;
-}
-
-export function registerUrlAnalyzer(fn: UrlAnalyzer): void {
-  urlAnalyzer = fn;
-}
-
 /**
  * Scan untrusted content before it reaches an LLM.
  *
@@ -60,11 +47,18 @@ export function scan(input: string, options: ScanOptions = {}): ScanResult {
   const ctx = createCtx(text, type, Math.max(20, options.maxExcerpt ?? 160));
 
   const views: TextView[] = [];
-  if ((type === 'html' || type === 'markdown') && structured) views.push(structured(ctx));
-  else views.push(plainView(text));
+  let post: (() => void) | null = null;
+  if (type === 'html' || type === 'markdown') {
+    const structured = analyzeStructured(ctx);
+    views.push(structured.view);
+    post = structured.post;
+  } else {
+    views.push(plainView(text));
+  }
   views.push(...detectUnicode(ctx));
   for (const v of views) detectInstructions(ctx, v);
-  if (urlAnalyzer) urlAnalyzer(ctx);
+  if (post) post();
+  detectExfiltration(ctx);
 
   const findings = ctx.findings.sort(
     (a, b) => rank(b.severity) - rank(a.severity) || a.location.start - b.location.start,
