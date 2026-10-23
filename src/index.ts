@@ -1,5 +1,7 @@
 export { scan, sanitize, isSafe, detectType } from './scan';
-export { INSTRUCTION_RULES } from './detectors/instructions';
+export { wrapUntrusted, type WrapOptions } from './wrap';
+export { INSTRUCTION_RULES, type InstructionRule } from './detectors/instructions';
+export { tokenize, decodeEntities, type Token, type Attr } from './html/tokenizer';
 export type {
   Category,
   ContentType,
